@@ -1,4 +1,4 @@
-import { Activity, BarChart3, LogOut, Map, Settings, User } from "lucide-react";
+import { BarChart3, LogOut, Map, Settings, User } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { BACKEND_URL } from "../lib/api";
@@ -25,10 +25,21 @@ export function Layout() {
   };
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" style={{ minHeight: "100dvh" }}>
+      {/* Mobile-only top bar */}
+      <header className="mobile-topbar">
+        <div className="brand-block">
+          <img src="/icons/icon-512.svg" alt="UrbanFlow" width={30} height={30} style={{ borderRadius: 6, display: "block" }} />
+          <div><strong>UrbanFlow</strong><small>Mobility</small></div>
+        </div>
+        <button onClick={handleLogout} aria-label="Se déconnecter">
+          <LogOut size={18} aria-hidden="true" />
+        </button>
+      </header>
+
       <aside className="sidebar">
         <div className="brand-block">
-          <span className="brand-mark"><Activity size={20} /></span>
+          <img src="/icons/icon-512.svg" alt="UrbanFlow" width={36} height={36} style={{ borderRadius: 8, display: "block" }} />
           <div>
             <strong>UrbanFlow</strong>
             <small>Mobility</small>
@@ -47,14 +58,14 @@ export function Layout() {
         <nav>
           {links.map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-              <Icon size={18} />
+              <Icon size={18} aria-hidden="true" />
               {label}
             </NavLink>
           ))}
         </nav>
-        <button className="ghost-button" onClick={handleLogout}>
-          <LogOut size={18} />
-          Deconnexion
+        <button className="ghost-button" onClick={handleLogout} aria-label="Se déconnecter">
+          <LogOut size={18} aria-hidden="true" />
+          Déconnexion
         </button>
       </aside>
       <Outlet />

@@ -50,12 +50,35 @@ export const api = {
   login: (email: string, password: string) =>
     request<AuthResponse>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   register: (payload: { email: string; password: string; first_name: string; last_name: string; phone?: string }) =>
-    request<AuthResponse>("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
+    request<{ message: string }>("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
+  verifyEmail: (token: string) =>
+    request<{ message: string }>(`/auth/verify?token=${encodeURIComponent(token)}`),
   logout: () => request<{ message: string }>("/auth/logout", { method: "POST" }),
+  deleteAccount: () => request<void>("/auth/me", { method: "DELETE" }),
   updateProfile: (payload: Partial<Profile>) =>
     request<Profile>("/profile/me", { method: "PUT", body: JSON.stringify(payload) }),
   dashboard: () => request<Record<string, unknown>>("/demo/dashboard"),
   transportModes: () => request<Array<{ id: string; label: string; status: string }>>("/transport/modes"),
+  transportNearby: (lat: number, lon: number) =>
+    request<Array<{
+      id: string; name: string; mode: string;
+      lat?: number; lon?: number;
+      available_bikes?: number; available_stands?: number;
+      status?: string; distance_m?: number;
+    }>>(`/transport/nearby?lat=${lat}&lon=${lon}`),
   routeEstimate: (origin: string, destination: string) =>
-    request<Record<string, unknown>>(`/routing/estimate?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`)
+    request<Record<string, unknown>>(`/routing/estimate?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`),
+  aiSuggest: (payload: { origin: string; destination: string; priority: string; modes: string[] }) =>
+    request<{ suggestion: string; steps: string[]; co2_estimate: string; tip: string }>(
+      "/ai/suggest",
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
+  aiStats: () =>
+    request<{ total_trips: number; total_co2_kg: number; monthly_trips: number; monthly_co2_kg: number }>(
+      "/ai/stats"
+    ),
+  aiWeekly: () =>
+    request<Array<{ date: string; trips: number; co2_kg: number }>>("/ai/weekly"),
+  aiPriorities: () =>
+    request<Array<{ priority: string; count: number }>>("/ai/priorities"),
 };

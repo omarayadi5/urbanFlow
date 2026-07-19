@@ -14,11 +14,25 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    DATABASE_URL: str = ""
     DATABASE_HOST: str = "localhost"
-    DATABASE_PORT: int = 3306
-    DATABASE_USER: str = "root"
+    DATABASE_PORT: int = 5432
+    DATABASE_USER: str = "postgres"
     DATABASE_PASSWORD: str = ""
-    DATABASE_NAME: str = "urban_app"
+    DATABASE_NAME: str = "postgres"
+
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+
+    JCDECAUX_API_KEY: str = ""
+    JCDECAUX_CONTRACT: str = "Lyon"
+
+    PRIM_API_KEY: str = ""
 
     JWT_SECRET_KEY: str = Field(..., min_length=32)
     JWT_ALGORITHM: str = "HS256"
@@ -34,8 +48,10 @@ class Settings(BaseSettings):
 
     @cached_property
     def database_url(self) -> str:
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
         return (
-            f"mysql+pymysql://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}"
+            f"postgresql+psycopg2://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}"
             f"@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
         )
 

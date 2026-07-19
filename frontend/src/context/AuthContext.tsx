@@ -6,7 +6,7 @@ type AuthContextValue = {
   profile: Profile | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (payload: { email: string; password: string; first_name: string; last_name: string; phone?: string }) => Promise<void>;
+  register: (payload: { email: string; password: string; first_name: string; last_name: string; phone?: string }) => Promise<{ message: string }>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   setProfile: (profile: Profile | null) => void;
@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile,
       refresh,
       login: async (email, password) => applyAuth(await api.login(email, password)),
-      register: async (payload) => { await api.register(payload); },
+      register: async (payload) => api.register(payload),
       logout: async () => {
         await api.logout().catch(() => undefined);
         setUser(null);

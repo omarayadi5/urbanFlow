@@ -18,6 +18,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
   const [emailSent, setEmailSent] = useState(false);
   const [sentTo, setSentTo] = useState("");
   const [pwd, setPwd] = useState("");
+  const [loginPwd, setLoginPwd] = useState("");
 
   if (user) {
     return <Navigate to="/" replace />;
@@ -70,13 +71,18 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
           return;
         }
         const email = String(form.get("email"));
-        await register({
+        const res = await register({
           email,
           password,
           first_name: String(form.get("first_name")),
           last_name: String(form.get("last_name")),
           phone: String(form.get("phone") || ""),
         });
+        // Dev mode: account auto-verified, go straight to login
+        if ((res as { message?: string })?.message?.includes("développement")) {
+          navigate("/login");
+          return;
+        }
         setSentTo(email);
         setEmailSent(true);
       }
@@ -144,8 +150,8 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
               aria-describedby={mode === "register" && pwd.length > 0 ? "pwd-rules" : undefined}
               autoComplete={mode === "login" ? "current-password" : "new-password"}
               required
-              value={mode === "register" ? pwd : undefined}
-              onChange={mode === "register" ? e => setPwd(e.target.value) : undefined}
+              value={mode === "register" ? pwd : loginPwd}
+              onChange={mode === "register" ? e => setPwd(e.target.value) : e => setLoginPwd(e.target.value)}
             />
           </span>
           {mode === "register" && pwd.length > 0 && (

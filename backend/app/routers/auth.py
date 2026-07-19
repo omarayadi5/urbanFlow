@@ -1,7 +1,10 @@
+import logging
 import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -33,12 +36,13 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    is_dev = settings.APP_ENV == "development"
     token = str(uuid.uuid4())
     user = User(
         email=payload.email,
         hashed_password=get_password_hash(payload.password),
-        is_verified=False,
-        verification_token=token,
+        is_verified=is_dev,          # auto-vérifié en dev, email requis en prod
+        verification_token=None if is_dev else token,
     )
     db.add(user)
     db.flush()
@@ -52,10 +56,13 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     db.add(profile)
     db.commit()
 
+    if is_dev:
+        return {"message": "Compte créé et vérifié automatiquement (mode développement)."}
+
     try:
         send_verification_email(payload.email, token)
-    except Exception:
-        pass  # ne bloque pas l'inscription si l'email échoue
+    except Exception as e:
+        logger.error("SMTP error: %s", e)
 
     return {"message": "Un email de vérification a été envoyé. Vérifiez votre boîte mail."}
 

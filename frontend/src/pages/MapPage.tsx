@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { Bike, Bus, Clock, Footprints, Leaf, Loader, LocateFixed, Navigation, Sparkles, TrainFront, X, Zap } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -22,17 +22,20 @@ function FlyTo({ pos, zoom }: { pos: [number, number]; zoom: number }) {
 
 async function geocodeQuery(query: string): Promise<[number, number] | null> {
   try {
+    const base = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=fr`;
+    // Try structured search first (best for French addresses with postal code)
+    const structured = await fetch(`${base}&q=${encodeURIComponent(query)}&countrycodes=fr`);
+    const s = await structured.json();
+    if (s[0]) return [parseFloat(s[0].lat), parseFloat(s[0].lon)];
+
+    // Fallback variants
     const variants = [
-      query,
-      `${query}, Tunis`,
-      `${query}, Tunisie`,
-      `${query}, Tunisia`,
       `${query}, France`,
+      `${query}, Tunisie`,
+      query,
     ];
     for (const q of variants) {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&accept-language=fr`
-      );
+      const res = await fetch(`${base}&q=${encodeURIComponent(q)}`);
       const data = await res.json();
       if (data[0]) return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
     }
@@ -66,6 +69,7 @@ const PRIORITIES = [
 type AIResult = { suggestion: string; steps: string[]; co2_estimate: string; tip: string } | null;
 type RouteMarkers = { origin: [number, number]; dest: [number, number] } | null;
 type CachedRoute = { result: NonNullable<AIResult>; origin: string; destination: string; priority: string; timestamp: number };
+type GeoSuggestion = { place_id: number; display_name: string; lat: string; lon: string };
 const CACHE_KEY = "uf_last_itinerary";
 
 const PARIS: [number, number] = [48.8566, 2.3522];
@@ -87,6 +91,12 @@ export function MapPage() {
   const [bikeStations, setBikeStations] = useState<Array<{ id: string; name: string; mode: string; lat: number; lon: number; available_bikes: number; available_stands: number; status: string; distance_m: number }>>([]);
   const [lastCached, setLastCached] = useState<CachedRoute | null>(null);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [originSuggestions, setOriginSuggestions] = useState<GeoSuggestion[]>([]);
+  const [destSuggestions, setDestSuggestions] = useState<GeoSuggestion[]>([]);
+  const [originCoords, setOriginCoords] = useState<[number, number] | null>(null);
+  const [destCoords, setDestCoords] = useState<[number, number] | null>(null);
+  const originDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const destDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     api.transportModes().then(setModes).catch(() => setModes([]));
@@ -104,6 +114,44 @@ export function MapPage() {
     window.addEventListener("offline", onOffline);
     return () => { window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
   }, []);
+
+  const fetchSuggestions = (query: string, setter: (s: GeoSuggestion[]) => void) => {
+    if (query.trim().length < 2) { setter([]); return; }
+    fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=fr&q=${encodeURIComponent(query)}`
+    )
+      .then(r => r.json())
+      .then((data: GeoSuggestion[]) => setter(data.slice(0, 5)))
+      .catch(() => setter([]));
+  };
+
+  const handleOriginChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setOrigin(val);
+    setOriginCoords(null);
+    if (originDebounce.current) clearTimeout(originDebounce.current);
+    originDebounce.current = setTimeout(() => fetchSuggestions(val, setOriginSuggestions), 350);
+  };
+
+  const handleDestChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setDestination(val);
+    setDestCoords(null);
+    if (destDebounce.current) clearTimeout(destDebounce.current);
+    destDebounce.current = setTimeout(() => fetchSuggestions(val, setDestSuggestions), 350);
+  };
+
+  const selectOrigin = (s: GeoSuggestion) => {
+    setOrigin(s.display_name);
+    setOriginCoords([parseFloat(s.lat), parseFloat(s.lon)]);
+    setOriginSuggestions([]);
+  };
+
+  const selectDest = (s: GeoSuggestion) => {
+    setDestination(s.display_name);
+    setDestCoords([parseFloat(s.lat), parseFloat(s.lon)]);
+    setDestSuggestions([]);
+  };
 
   const handleLocate = () => {
     if (!navigator.geolocation) {
@@ -123,6 +171,8 @@ export function MapPage() {
         const addr = data.address;
         const parts = [addr.road, addr.suburb || addr.neighbourhood, addr.city || addr.town || addr.village].filter(Boolean);
         setOrigin(parts.length ? parts.join(", ") : data.display_name.split(",").slice(0, 2).join(",").trim());
+        setOriginCoords([latitude, longitude]);
+        setOriginSuggestions([]);
         setUserPos([latitude, longitude]);
         setFlyTarget({ pos: [latitude, longitude], zoom: 15 });
         api.transportNearby(latitude, longitude)
@@ -205,14 +255,16 @@ export function MapPage() {
     try {
       const [data, originPos, destPos] = await Promise.all([
         api.aiSuggest({ origin: origin.trim(), destination: destination.trim(), priority, modes: ["walk", "transit", "bike"] }),
-        geocodeQuery(origin.trim()),
-        geocodeQuery(destination.trim()),
+        originCoords ? Promise.resolve(originCoords) : geocodeQuery(origin.trim()),
+        destCoords ? Promise.resolve(destCoords) : geocodeQuery(destination.trim()),
       ]);
       setResult(data);
       // Persist to localStorage so the last itinerary survives page reload / offline
       const toCache: CachedRoute = { result: data, origin: origin.trim(), destination: destination.trim(), priority, timestamp: Date.now() };
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(toCache)); } catch {}
       setLastCached(null); // dismiss banner now that we have a fresh result
+      if (!originPos) setError("Adresse de départ introuvable — essayez d'être plus précis (ex: 47 Rue des Étudiants, 92400 Courbevoie, France)");
+      if (!destPos) setError("Adresse d'arrivée introuvable — essayez d'être plus précis");
       if (originPos) setFlyTarget({ pos: originPos, zoom: 13 });
       if (originPos && destPos) {
         setRouteMarkers({ origin: originPos, dest: destPos });
@@ -356,33 +408,59 @@ export function MapPage() {
           <div className="ai-inputs">
             <label>
               Départ
-              <div className="input-with-btn">
-                <input
-                  placeholder="Ex : Campus Paris, France"
-                  value={origin}
-                  onChange={e => setOrigin(e.target.value)}
-                  required
-                />
-                <button
-                  type="button"
-                  className="locate-btn"
-                  onClick={handleLocate}
-                  disabled={locating}
-                  title="Utiliser ma position actuelle"
-                  aria-label="Utiliser ma position GPS comme point de départ"
-                >
-                  {locating ? <Loader size={14} className="spin" aria-hidden="true" /> : <LocateFixed size={14} aria-hidden="true" />}
-                </button>
+              <div className="autocomplete-wrap">
+                <div className="input-with-btn">
+                  <input
+                    placeholder="Ex : Campus Paris, France"
+                    value={origin}
+                    onChange={handleOriginChange}
+                    onBlur={() => setTimeout(() => setOriginSuggestions([]), 150)}
+                    autoComplete="off"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="locate-btn"
+                    onClick={handleLocate}
+                    disabled={locating}
+                    title="Utiliser ma position actuelle"
+                    aria-label="Utiliser ma position GPS comme point de départ"
+                  >
+                    {locating ? <Loader size={14} className="spin" aria-hidden="true" /> : <LocateFixed size={14} aria-hidden="true" />}
+                  </button>
+                </div>
+                {originSuggestions.length > 0 && (
+                  <ul className="autocomplete-dropdown" role="listbox">
+                    {originSuggestions.map(s => (
+                      <li key={s.place_id} className="autocomplete-item" role="option" onMouseDown={() => selectOrigin(s)}>
+                        {s.display_name}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </label>
             <label>
               Arrivée
-              <input
-                placeholder="Ex : Gare de France"
-                value={destination}
-                onChange={e => setDestination(e.target.value)}
-                required
-              />
+              <div className="autocomplete-wrap">
+                <input
+                  placeholder="Ex : Gare de Lyon, Paris"
+                  value={destination}
+                  onChange={handleDestChange}
+                  onBlur={() => setTimeout(() => setDestSuggestions([]), 150)}
+                  autoComplete="off"
+                  required
+                />
+                {destSuggestions.length > 0 && (
+                  <ul className="autocomplete-dropdown" role="listbox">
+                    {destSuggestions.map(s => (
+                      <li key={s.place_id} className="autocomplete-item" role="option" onMouseDown={() => selectDest(s)}>
+                        {s.display_name}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </label>
           </div>
 
